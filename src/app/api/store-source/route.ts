@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
   ProcessingResult,
   SourceData,
   SourceProcessingResult,
 } from "@/lib/content-processor";
+import { PrismaClient } from "@prisma/client";
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
+const prisma = new PrismaClient();
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,8 +22,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store the processed content in Supabase
-    const result = await storeProcessedContent(processingResult, sourceData);
+    // Store the processed content in database using Prisma
+    const result = await storeProcessedContentWithPrisma(
+      processingResult,
+      sourceData
+    );
 
     return NextResponse.json(result);
   } catch (error) {
@@ -35,67 +35,77 @@ export async function POST(request: NextRequest) {
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
+  } finally {
+    // Important: Disconnect Prisma client to avoid connection leaks in serverless environments
+    await prisma.$disconnect();
   }
 }
 
 /**
- * Store processed content in Supabase
+ * Store processed content using Prisma
  *
  * @param processingResult Result from content processing
  * @param sourceData Metadata about the source
  * @returns Source processing result with status
  */
-async function storeProcessedContent(
+async function storeProcessedContentWithPrisma(
   processingResult: ProcessingResult,
   sourceData: SourceData
 ): Promise<SourceProcessingResult> {
   try {
-    // 1. Insert the source record
-    const { data: sourceRecord, error: sourceError } = await supabase
-      .from("sources")
-      .insert({
-        title: sourceData.title,
-        description: sourceData.description || processingResult.summary,
-        url: sourceData.url || null,
-        type: sourceData.type,
-        space_id: sourceData.spaceId,
-        user_id: sourceData.userId,
-      })
-      .select("id")
-      .single();
+    // Use a transaction to ensure data consistency
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create the source record
+      const source = await tx.source.create({
+        data: {
+          name: sourceData.name,
+          description: sourceData.description || processingResult.summary,
+          url: sourceData.url,
+          filepath: sourceData.filepath,
+          type: sourceData.type,
+          tags: sourceData.tags || [],
+          metadata: sourceData.metadata || {},
+          space: {
+            connect: { id: sourceData.spaceId },
+          },
+        },
+      });
 
-    if (sourceError) throw sourceError;
-    if (!sourceRecord) throw new Error("Failed to create source record");
+      // 2. Create chunks for the source
+      const chunkPromises = processingResult.text.map((content, index) => {
+        return tx.chunk.create({
+          data: {
+            content,
+            tags: [],
+            metadata: { chunk_index: index },
+            source: {
+              connect: { id: source.id },
+            },
+          },
+        });
+      });
 
-    const sourceId = sourceRecord.id;
+      const chunks = await Promise.all(chunkPromises);
 
-    // 2. Insert source chunks
-    const chunkInserts = processingResult.text.map((chunk, index) => ({
-      source_id: sourceId,
-      content: chunk,
-      chunk_index: index,
-      // No embedding yet, could be added in a separate process
-    }));
-
-    const { error: chunksError } = await supabase
-      .from("source_chunks")
-      .insert(chunkInserts);
-
-    if (chunksError) throw chunksError;
+      return {
+        source,
+        chunkCount: chunks.length,
+      };
+    });
 
     // Return success result
     return {
-      sourceId,
-      title: sourceData.title,
-      description: sourceData.description || processingResult.summary,
-      chunkCount: processingResult.text.length,
+      sourceId: result.source.id,
+      name: result.source.name,
+      description: result.source.description || "",
+      chunkCount: result.chunkCount,
       success: true,
     };
   } catch (error) {
-    console.error("Error storing content in Supabase:", error);
+    console.error("Error storing content with Prisma:", error);
     return {
       sourceId: "",
-      title: sourceData.title,
+      name: sourceData.name,
       description: sourceData.description || "",
       chunkCount: 0,
       success: false,

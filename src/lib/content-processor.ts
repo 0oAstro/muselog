@@ -8,16 +8,14 @@ import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import youtubeTranscript from "youtube-transcript";
-import { createClient } from "@supabase/supabase-js";
+import { PrismaClient } from "@prisma/client";
 
 // API keys loaded from environment variables
 const serverApiKey = process.env.GEMINI_API_KEY || "";
 const clientApiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-// Initialize the Supabase client with service role key for server operations
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Initialize the Prisma client
+const prisma = new PrismaClient();
 
 // Initialize the Gemini API instances
 const serverGenAI = new GoogleGenerativeAI(serverApiKey);
@@ -56,15 +54,18 @@ export interface ProcessingResult {
 export type OCRResult = ProcessingResult;
 
 /**
- * Interface for source data to store in Supabase
+ * Interface for source data to store using Prisma
  */
 export interface SourceData {
-  title: string;
+  name: string;
   description?: string;
   url?: string;
-  type: "pdf" | "image" | "youtube" | "audio";
+  filepath?: string;
+  type: "pdf" | "image" | "youtube" | "audio" | "text";
+  tags?: string[];
   spaceId: string;
-  userId: string;
+  userId?: string; // Optional as Space relation already has userId
+  metadata?: Record<string, any>;
 }
 
 /**
@@ -72,7 +73,7 @@ export interface SourceData {
  */
 export interface SourceProcessingResult {
   sourceId: string;
-  title: string;
+  name: string;
   description: string;
   chunkCount: number;
   success: boolean;
@@ -404,6 +405,7 @@ export async function processYouTubeVideo(
     };
 
     const result = await model.generateContent({
+      generationConfig,
       contents: [
         {
           role: "user",
@@ -417,9 +419,123 @@ export async function processYouTubeVideo(
             },
           ],
         },
-      ],
-      generationConfig,
+      ]
     });
+
+    const {
+    GoogleGenerativeAI,
+    HarmCategory,
+    HarmBlockThreshold,
+  } = require("@google/generative-ai");
+  const { GoogleAIFileManager } = require("@google/generative-ai/server");
+  
+  const apiKey = process.env.GEMINI_API_KEY;
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const fileManager = new GoogleAIFileManager(apiKey);
+  
+  /**
+   * Uploads the given file to Gemini.
+   *
+   * See https://ai.google.dev/gemini-api/docs/prompting_with_media
+   */
+  async function uploadToGemini(path, mimeType) {
+    const uploadResult = await fileManager.uploadFile(path, {
+      mimeType,
+      displayName: path,
+    });
+    const file = uploadResult.file;
+    console.log(`Uploaded file ${file.displayName} as: ${file.name}`);
+    return file;
+  }
+  
+  /**
+   * Waits for the given files to be active.
+   *
+   * Some files uploaded to the Gemini API need to be processed before they can
+   * be used as prompt inputs. The status can be seen by querying the file's
+   * "state" field.
+   *
+   * This implementation uses a simple blocking polling loop. Production code
+   * should probably employ a more sophisticated approach.
+   */
+  async function waitForFilesActive(files) {
+    console.log("Waiting for file processing...");
+    for (const name of files.map((file) => file.name)) {
+      let file = await fileManager.getFile(name);
+      while (file.state === "PROCESSING") {
+        process.stdout.write(".")
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        file = await fileManager.getFile(name)
+      }
+      if (file.state !== "ACTIVE") {
+        throw Error(`File ${file.name} failed to process`);
+      }
+    }
+    console.log("...all files ready\n");
+  }
+  
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash-exp",
+  });
+  
+  const generationConfig = {
+    temperature: 0.3,
+    topP: 0.95,
+    topK: 40,
+    maxOutputTokens: 8192,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "array",
+          items: {
+            type: "string"
+          }
+        },
+        summary: {
+          type: "string"
+        }
+      },
+      required: [
+        "text",
+        "summary"
+      ]
+    },
+  };
+  
+  async function run() {
+    // TODO Make these files available on the local file system
+    // You may need to update the file paths
+    const files = [
+      await uploadToGemini("2402-PYL101_Lecture-4_Agnihotri.pdf", "application/pdf"),
+    ];
+  
+    // Some files have a processing delay. Wait for them to be ready.
+    await waitForFilesActive(files);
+  
+    const chatSession = model.startChat({
+      generationConfig,
+      history: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: {
+                mimeType: files[0].mimeType,
+                fileUri: files[0].uri,
+              },
+            },
+          ],
+        },
+      ],
+    });
+  
+    const result = await chatSession.sendMessage("OCR the following page into Markdown.\\nMathematical symbols and expressions shall be done in latex. \\nDo not sorround your output with triple backticks.\\n\\nChunk the document into sections of roughly 250 - 1000 words. Our goal is \\nto identify parts of the page with same semantic theme. These chunks will \\nbe embedded and used in a RAG pipeline.  \\\"text\\\" should have chunk wise strings rather than line wise strings.\\n\\nIn the end, create a summary of the document of what's discussed here.");
+    console.log(result.response.text());
+  }
+  
+  run();
 
     const response = JSON.parse(result.response.text());
     return {
@@ -691,7 +807,7 @@ export async function processYouTubeTranscriptWithGemini(
     // Extract JSON from the response
     const jsonMatch =
       text.match(/```json\n([\s\S]*?)\n```/) ||
-      text.match(/```\n([\s\S]*?)\n```/) ||
+      text.match(/```\n([\\s\S]*?)\n```/) ||
       text.match(/{[\s\S]*?}/);
 
     if (jsonMatch) {
@@ -734,7 +850,7 @@ export function mapToProcessingResult(result: {
 }
 
 /**
- * Process content and store it in Supabase
+ * Process content and store it in database using Prisma
  *
  * @param filePath Path to the file to process (for PDF, image, audio)
  * @param sourceData Metadata about the source
@@ -771,17 +887,26 @@ export async function processAndStoreSource(
           throw new Error("File path is required for audio processing");
         processingResult = await processAudio(filePath);
         break;
+      case "text":
+        // Handle plain text source
+        processingResult = {
+          text: sourceData.description
+            ? [sourceData.description]
+            : ["Text content not provided"],
+          summary: sourceData.description?.substring(0, 200) || "Text source",
+        };
+        break;
       default:
         throw new Error(`Unsupported source type: ${sourceData.type}`);
     }
 
-    // Store the processed content in Supabase
-    return await storeProcessedContent(processingResult, sourceData);
+    // Store the processed content using Prisma
+    return await storeProcessedContentWithPrisma(processingResult, sourceData);
   } catch (error) {
     console.error("Error processing and storing source:", error);
     return {
       sourceId: "",
-      title: sourceData.title,
+      name: sourceData.name,
       description: sourceData.description || "",
       chunkCount: 0,
       success: false,
@@ -804,63 +929,70 @@ function extractYouTubeVideoId(url: string): string | null {
 }
 
 /**
- * Store processed content in Supabase
+ * Store processed content using Prisma
  *
  * @param processingResult Result from content processing
  * @param sourceData Metadata about the source
  * @returns Source processing result with status
  */
-async function storeProcessedContent(
+async function storeProcessedContentWithPrisma(
   processingResult: ProcessingResult,
   sourceData: SourceData
 ): Promise<SourceProcessingResult> {
   try {
-    // 1. Insert the source record
-    const { data: sourceRecord, error: sourceError } = await supabase
-      .from("sources")
-      .insert({
-        title: sourceData.title,
-        description: sourceData.description || processingResult.summary,
-        url: sourceData.url || null,
-        type: sourceData.type,
-        space_id: sourceData.spaceId,
-        user_id: sourceData.userId,
-      })
-      .select("id")
-      .single();
+    // Use a transaction to ensure data consistency
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create the source record
+      const source = await tx.source.create({
+        data: {
+          name: sourceData.name,
+          description: sourceData.description || processingResult.summary,
+          url: sourceData.url,
+          filepath: sourceData.filepath,
+          type: sourceData.type,
+          tags: sourceData.tags || [],
+          metadata: sourceData.metadata || {},
+          space: {
+            connect: { id: sourceData.spaceId },
+          },
+        },
+      });
 
-    if (sourceError) throw sourceError;
-    if (!sourceRecord) throw new Error("Failed to create source record");
+      // 2. Create chunks for the source
+      const chunkPromises = processingResult.text.map((content, index) => {
+        return tx.chunk.create({
+          data: {
+            content,
+            tags: [],
+            metadata: { chunk_index: index },
+            source: {
+              connect: { id: source.id },
+            },
+          },
+        });
+      });
 
-    const sourceId = sourceRecord.id;
+      const chunks = await Promise.all(chunkPromises);
 
-    // 2. Insert source chunks
-    const chunkInserts = processingResult.text.map((chunk, index) => ({
-      source_id: sourceId,
-      content: chunk,
-      chunk_index: index,
-      // No embedding yet, could be added in a separate process
-    }));
-
-    const { error: chunksError } = await supabase
-      .from("source_chunks")
-      .insert(chunkInserts);
-
-    if (chunksError) throw chunksError;
+      return {
+        source,
+        chunkCount: chunks.length,
+      };
+    });
 
     // Return success result
     return {
-      sourceId,
-      title: sourceData.title,
-      description: sourceData.description || processingResult.summary,
-      chunkCount: processingResult.text.length,
+      sourceId: result.source.id,
+      name: result.source.name,
+      description: result.source.description || "",
+      chunkCount: result.chunkCount,
       success: true,
     };
   } catch (error) {
-    console.error("Error storing content in Supabase:", error);
+    console.error("Error storing content with Prisma:", error);
     return {
       sourceId: "",
-      title: sourceData.title,
+      name: sourceData.name,
       description: sourceData.description || "",
       chunkCount: 0,
       success: false,
@@ -870,8 +1002,7 @@ async function storeProcessedContent(
 }
 
 /**
- * Generate embeddings for source chunks
- * This could be implemented separately using an embedding model
+ * Generate embeddings for source chunks using Prisma
  *
  * @param sourceId ID of the source to generate embeddings for
  * @returns Success status
@@ -881,36 +1012,44 @@ export async function generateEmbeddingsForSource(
 ): Promise<boolean> {
   try {
     // 1. Get all chunks for the source
-    const { data: chunks, error: fetchError } = await supabase
-      .from("source_chunks")
-      .select("id, content")
-      .eq("source_id", sourceId);
+    const chunks = await prisma.chunk.findMany({
+      where: { sourceId: sourceId },
+      select: { id: true, content: true },
+    });
 
-    if (fetchError) throw fetchError;
-    if (!chunks || chunks.length === 0) return true;
+    if (chunks.length === 0) return true;
 
-    // 2. For each chunk, generate an embedding
+    // 2. For each chunk, generate an embedding and update it
     // This is a placeholder - you would use an actual embedding model here
     // like OpenAI's embeddings API or a local model
 
     // Example with a hypothetical embedding function:
     // for (const chunk of chunks) {
     //   const embedding = await generateEmbedding(chunk.content);
-    //   await supabase
-    //     .from('source_chunks')
-    //     .update({ embedding })
-    //     .eq('id', chunk.id);
+    //
+    //   // Convert embedding to Buffer for storage in Prisma's Bytes type
+    //   const embeddingBuffer = Buffer.from(
+    //     new Float32Array(embedding).buffer
+    //   );
+    //
+    //   await prisma.chunk.update({
+    //     where: { id: chunk.id },
+    //     data: {
+    //       embedding: embeddingBuffer,
+    //       vectorId: `vec_${chunk.id}` // If using external vector DB
+    //     }
+    //   });
     // }
 
     return true;
   } catch (error) {
-    console.error("Error generating embeddings:", error);
+    console.error("Error generating embeddings with Prisma:", error);
     return false;
   }
 }
 
 /**
- * Process a client uploaded file and store in Supabase
+ * Process a client uploaded file and store using Prisma
  *
  * @param file File object from client upload
  * @param sourceData Source metadata
@@ -938,10 +1077,7 @@ export async function processClientFileAndStore(
         );
     }
 
-    // For client-side processing, we need to call the server to store in Supabase
-    // This would typically be an API endpoint that calls storeProcessedContent
-
-    // Example API call (this would need an actual endpoint implementation)
+    // For client-side processing, call the API endpoint that uses Prisma
     const response = await fetch("/api/store-source", {
       method: "POST",
       headers: {
@@ -962,11 +1098,70 @@ export async function processClientFileAndStore(
     console.error("Error processing client file:", error);
     return {
       sourceId: "",
-      title: sourceData.title,
+      name: sourceData.name,
       description: sourceData.description || "",
       chunkCount: 0,
       success: false,
       error: error instanceof Error ? error.message : String(error),
     };
+  }
+}
+
+/**
+ * Create citations for chunks that match a query
+ *
+ * @param query Search query
+ * @param messageId ID of the message to associate citations with
+ * @param spaceId Limit search to a specific space
+ * @returns Array of created citations
+ */
+export async function createCitationsForQuery(
+  query: string,
+  messageId: string,
+  spaceId: string
+): Promise<any[]> {
+  try {
+    // This is a placeholder for a more sophisticated search mechanism
+    // In a real implementation, you would:
+    // 1. Generate an embedding for the query
+    // 2. Perform vector search for similar chunks
+    // 3. Create citations for the most relevant chunks
+
+    // Example implementation using naive text search:
+    const chunks = await prisma.chunk.findMany({
+      where: {
+        content: {
+          search: query.split(" ").join(" & "), // Basic text search
+        },
+        source: {
+          spaceId: spaceId,
+        },
+      },
+      take: 3, // Limit to top 3 results
+      include: {
+        source: true,
+      },
+    });
+
+    // Create citations for each matching chunk
+    const citations = await Promise.all(
+      chunks.map(async (chunk, index) => {
+        // Calculate a basic relevance score (better in real vector search)
+        const relevanceScore = 1.0 - index * 0.2; // Simple scoring: 1.0, 0.8, 0.6...
+
+        return prisma.citation.create({
+          data: {
+            relevanceScore,
+            chunk: { connect: { id: chunk.id } },
+            message: { connect: { id: messageId } },
+          },
+        });
+      })
+    );
+
+    return citations;
+  } catch (error) {
+    console.error("Error creating citations:", error);
+    return [];
   }
 }

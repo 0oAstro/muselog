@@ -3,8 +3,7 @@
 import { useRef, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import ForceGraph2D from "react-force-graph-2d";
-import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import * as motion from "motion/react-client";import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface GraphNode {
   id: string;

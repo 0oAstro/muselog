@@ -1,403 +1,322 @@
-import { supabase } from '@/lib/supabase';
+import prisma from "@/lib/db";
+import { generateEmbedding, embeddingToBuffer } from "@/lib/embeddings";
+import type { Space, Source, Note, Chunk } from "@/lib/types";
 
-// This is a local storage implementation for demo purposes
-// In a real app, this would fetch data from a database
-
-export interface Space {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  backdrop?: string;
-  tags?: string[];
-  created_at: Date;
-  updated_at: Date;
+// UUID validation function
+function isValidUUID(uuid: string): boolean {
+  if (uuid === 'new') return false;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
 }
-
-export interface Note {
-  id: string;
-  space_id: string;
-  title: string;
-  content: string;
-  tags?: string[];
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface Source {
-  id: string;
-  space_id: string;
-  name: string;
-  type: "pdf" | "image" | "audio" | "youtube" | "text";
-  url?: string;
-  filepath?: string;
-  tags?: string[];
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface Chunk {
-  id: string;
-  source_id: string;
-  content: string;
-  tags?: string[];
-  metadata?: {
-    page?: number;
-    startTime?: number;
-    endTime?: number;
-    [key: string]: any;
-  };
-  created_at: Date;
-  updated_at: Date;
-}
-
-// Mock data
-const initialSpaces: Space[] = [
-  {
-    id: "space-1",
-    name: "Machine Learning",
-    description: "Notes and resources about machine learning algorithms and techniques",
-    icon: "🧠",
-    backdrop: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop",
-    tags: ["AI", "ML", "Data Science"],
-    created_at: new Date("2023-01-15"),
-    updated_at: new Date("2023-03-20"),
-  },
-  {
-    id: "space-2",
-    name: "Web Development",
-    description: "Frontend and backend web development resources",
-    icon: "🌐",
-    backdrop: "https://images.unsplash.com/photo-1517180102446-f3ece451e9d8?w=800&auto=format&fit=crop",
-    tags: ["React", "Next.js", "TypeScript"],
-    created_at: new Date("2023-02-10"),
-    updated_at: new Date("2023-04-05"),
-  },
-  {
-    id: "space-3",
-    name: "Book Notes",
-    description: "Notes from books I've read",
-    icon: "📚",
-    backdrop: "https://images.unsplash.com/photo-1526243741027-444d633d7365?w=800&auto=format&fit=crop",
-    tags: ["Books", "Reading", "Notes"],
-    created_at: new Date("2023-03-22"),
-    updated_at: new Date("2023-05-18"),
-  },
-];
-
-// Helper function to get data from localStorage or use initial data
-const getLocalData = <T>(key: string, initialData: T[]): T[] => {
-  if (typeof window === "undefined") return initialData;
-  
-  const storedData = localStorage.getItem(key);
-  return storedData ? JSON.parse(storedData) : initialData;
-};
-
-// Helper function to save data to localStorage
-const saveLocalData = <T>(key: string, data: T[]): void => {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(data));
-};
 
 // Spaces CRUD operations
-export async function getSpaces(): Promise<Space[]> {
-  const { data, error } = await supabase
-    .from('spaces')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching spaces:', error);
+export async function getAllSpaces(): Promise<Space[]> {
+  try {
+    return await prisma.space.findMany({
+      orderBy: { updatedAt: 'desc' }
+    });
+  } catch (error) {
+    console.error("Error fetching spaces:", error);
     return [];
   }
-  
-  return data || [];
 }
 
 export async function getSpaceById(id: string): Promise<Space | null> {
-  const { data, error } = await supabase
-    .from('spaces')
-    .select('*')
-    .eq('id', id)
-    .single();
-  
-  if (error) {
-    console.error(`Error fetching space ${id}:`, error);
+  try {
+    // Handle the 'new' route separately
+    if (id === 'new') {
+      return null;
+    }
+    
+    // Validate UUID format before querying database
+    if (!isValidUUID(id)) {
+      throw new Error(`Invalid UUID format: ${id}`);
+    }
+
+    return await prisma.space.findUnique({
+      where: { id },
+      include: {
+        sources: {
+          orderBy: { createdAt: 'desc' },
+        },
+        notes: {
+          orderBy: { updatedAt: 'desc' },
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching space:", error);
     return null;
   }
-  
-  return data;
 }
 
-export async function createSpace(data: Omit<Space, "id" | "created_at" | "updated_at">): Promise<Space> {
-  const { data: space, error } = await supabase
-    .from('spaces')
-    .insert([data])
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error creating space:', error);
-    throw new Error('Failed to create space');
+export async function getSpacesByUserId(userId: string): Promise<Space[]> {
+  try {
+    return await prisma.space.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+    });
+  } catch (error) {
+    console.error("Error fetching spaces:", error);
+    return [];
   }
-  
-  return space;
 }
 
-export async function updateSpace(id: string, data: Partial<Omit<Space, "id" | "created_at" | "updated_at">>): Promise<Space | null> {
-  const { data: space, error } = await supabase
-    .from('spaces')
-    .update(data)
-    .eq('id', id)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating space ${id}:`, error);
-    throw new Error('Failed to update space');
+export async function createSpace(data: Omit<Space, "id" | "createdAt" | "updatedAt">): Promise<Space> {
+  try {
+    return await prisma.space.create({
+      data: {
+        ...data,
+        tags: data.tags || [],
+      }
+    });
+  } catch (error) {
+    console.error("Error creating space:", error);
+    throw new Error("Failed to create space");
   }
-  
-  return space;
+}
+
+export async function updateSpace(
+  id: string,
+  data: Partial<Omit<Space, "id" | "createdAt" | "updatedAt">>
+): Promise<Space | null> {
+  try {
+    return await prisma.space.update({
+      where: { id },
+      data
+    });
+  } catch (error) {
+    console.error("Error updating space:", error);
+    return null;
+  }
 }
 
 export async function deleteSpace(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('spaces')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error(`Error deleting space ${id}:`, error);
+  try {
+    await prisma.space.delete({
+      where: { id }
+    });
+    return true;
+  } catch (error) {
+    console.error("Error deleting space:", error);
     return false;
   }
-  
-  return true;
 }
 
 // Notes CRUD operations
 export async function getNotesBySpaceId(spaceId: string): Promise<Note[]> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('*')
-    .eq('space_id', spaceId)
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error(`Error fetching notes for space ${spaceId}:`, error);
+  try {
+    return await prisma.note.findMany({
+      where: { spaceId },
+      orderBy: { updatedAt: 'desc' },
+    });
+  } catch (error) {
+    console.error("Error fetching notes:", error);
     return [];
   }
-  
-  return data || [];
 }
 
 export async function getNoteById(id: string): Promise<Note | null> {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('*')
-    .eq('id', id)
-    .single();
-  
-  if (error) {
-    console.error(`Error fetching note ${id}:`, error);
+  try {
+    return await prisma.note.findUnique({
+      where: { id },
+    });
+  } catch (error) {
+    console.error("Error fetching note:", error);
     return null;
   }
-  
-  return data;
 }
 
-export async function createNote(data: Omit<Note, "id" | "created_at" | "updated_at">): Promise<Note> {
-  const { data: note, error } = await supabase
-    .from('notes')
-    .insert([data])
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error creating note:', error);
-    throw new Error('Failed to create note');
+export async function createNote(data: Omit<Note, "id" | "createdAt" | "updatedAt">): Promise<Note> {
+  try {
+    return await prisma.note.create({
+      data: {
+        ...data,
+        tags: data.tags || [],
+      }
+    });
+  } catch (error) {
+    console.error("Error creating note:", error);
+    throw new Error("Failed to create note");
   }
-  
-  return note;
 }
 
-export async function updateNote(id: string, data: Partial<Omit<Note, "id" | "created_at" | "updated_at">>): Promise<Note | null> {
-  const { data: note, error } = await supabase
-    .from('notes')
-    .update(data)
-    .eq('id', id)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating note ${id}:`, error);
-    throw new Error('Failed to update note');
+export async function updateNote(
+  id: string,
+  data: Partial<Omit<Note, "id" | "createdAt" | "updatedAt">>
+): Promise<Note | null> {
+  try {
+    return await prisma.note.update({
+      where: { id },
+      data
+    });
+  } catch (error) {
+    console.error("Error updating note:", error);
+    return null;
   }
-  
-  return note;
 }
 
 export async function deleteNote(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('notes')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error(`Error deleting note ${id}:`, error);
+  try {
+    await prisma.note.delete({
+      where: { id }
+    });
+    return true;
+  } catch (error) {
+    console.error("Error deleting note:", error);
     return false;
   }
-  
-  return true;
 }
 
 // Sources CRUD operations
 export async function getSourcesBySpaceId(spaceId: string): Promise<Source[]> {
-  const { data, error } = await supabase
-    .from('sources')
-    .select('*')
-    .eq('space_id', spaceId)
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error(`Error fetching sources for space ${spaceId}:`, error);
+  try {
+    return await prisma.source.findMany({
+      where: { spaceId },
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (error) {
+    console.error("Error fetching sources:", error);
     return [];
   }
-  
-  return data || [];
 }
 
 export async function getSourceById(id: string): Promise<Source | null> {
-  const { data, error } = await supabase
-    .from('sources')
-    .select('*')
-    .eq('id', id)
-    .single();
-  
-  if (error) {
-    console.error(`Error fetching source ${id}:`, error);
+  try {
+    return await prisma.source.findUnique({
+      where: { id },
+    });
+  } catch (error) {
+    console.error("Error fetching source:", error);
     return null;
   }
-  
-  return data;
 }
 
-export async function createSource(data: Omit<Source, "id" | "created_at" | "updated_at">): Promise<Source> {
-  const { data: source, error } = await supabase
-    .from('sources')
-    .insert([data])
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error creating source:', error);
-    throw new Error('Failed to create source');
+export async function createSource(data: Omit<Source, "id" | "createdAt" | "updatedAt">): Promise<Source> {
+  try {
+    return await prisma.source.create({
+      data: {
+        ...data,
+        tags: data.tags || [],
+      }
+    });
+  } catch (error) {
+    console.error("Error creating source:", error);
+    throw new Error("Failed to create source");
   }
-  
-  return source;
 }
 
-export async function updateSource(id: string, data: Partial<Omit<Source, "id" | "created_at" | "updated_at">>): Promise<Source | null> {
-  const { data: source, error } = await supabase
-    .from('sources')
-    .update(data)
-    .eq('id', id)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating source ${id}:`, error);
-    throw new Error('Failed to update source');
+export async function updateSource(
+  id: string,
+  data: Partial<Omit<Source, "id" | "createdAt" | "updatedAt">>
+): Promise<Source | null> {
+  try {
+    return await prisma.source.update({
+      where: { id },
+      data
+    });
+  } catch (error) {
+    console.error("Error updating source:", error);
+    return null;
   }
-  
-  return source;
 }
 
 export async function deleteSource(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('sources')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error(`Error deleting source ${id}:`, error);
+  try {
+    await prisma.source.delete({
+      where: { id }
+    });
+    return true;
+  } catch (error) {
+    console.error("Error deleting source:", error);
     return false;
   }
-  
-  return true;
 }
 
 // Chunks CRUD operations
 export async function getChunksBySourceId(sourceId: string): Promise<Chunk[]> {
-  const { data, error } = await supabase
-    .from('chunks')
-    .select('*')
-    .eq('source_id', sourceId)
-    .order('created_at', { ascending: true });
-  
-  if (error) {
-    console.error(`Error fetching chunks for source ${sourceId}:`, error);
+  try {
+    return await prisma.chunk.findMany({
+      where: { sourceId },
+      orderBy: { createdAt: 'asc' },
+    });
+  } catch (error) {
+    console.error("Error fetching chunks:", error);
     return [];
   }
-  
-  return data || [];
 }
 
 export async function getChunkById(id: string): Promise<Chunk | null> {
-  const { data, error } = await supabase
-    .from('chunks')
-    .select('*')
-    .eq('id', id)
-    .single();
-  
-  if (error) {
-    console.error(`Error fetching chunk ${id}:`, error);
+  try {
+    return await prisma.chunk.findUnique({
+      where: { id },
+    });
+  } catch (error) {
+    console.error("Error fetching chunk:", error);
     return null;
   }
-  
-  return data;
 }
 
-export async function createChunk(data: Omit<Chunk, "id" | "created_at" | "updated_at">): Promise<Chunk> {
-  const { data: chunk, error } = await supabase
-    .from('chunks')
-    .insert([data])
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error creating chunk:', error);
-    throw new Error('Failed to create chunk');
+export async function createChunk(data: Omit<Chunk, "id" | "createdAt" | "updatedAt">): Promise<Chunk> {
+  try {
+    // Generate embedding for the chunk content
+    const embeddingArray = await generateEmbedding(data.content);
+    const embeddingBuffer = embeddingToBuffer(embeddingArray);
+    
+    // Create the chunk with embedding in the database
+    return await prisma.chunk.create({
+      data: {
+        content: data.content,
+        tags: data.tags || [],
+        metadata: data.metadata || {},
+        embedding: embeddingBuffer,
+        sourceId: data.sourceId,
+        userId: data.userId || (await getCurrentUser()).id,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating chunk:", error);
+    throw new Error("Failed to create chunk");
   }
-  
-  return chunk;
 }
 
-export async function updateChunk(id: string, data: Partial<Omit<Chunk, "id" | "created_at" | "updated_at">>): Promise<Chunk | null> {
-  const { data: chunk, error } = await supabase
-    .from('chunks')
-    .update(data)
-    .eq('id', id)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error(`Error updating chunk ${id}:`, error);
-    throw new Error('Failed to update chunk');
+export async function updateChunk(
+  id: string,
+  data: Partial<Omit<Chunk, "id" | "createdAt" | "updatedAt">>
+): Promise<Chunk | null> {
+  try {
+    // If content is updated, regenerate the embedding
+    let embeddingBuffer: Buffer | undefined;
+    if (data.content) {
+      const embeddingArray = await generateEmbedding(data.content);
+      embeddingBuffer = embeddingToBuffer(embeddingArray);
+    }
+    
+    // Update the chunk with new data and possibly new embedding
+    return await prisma.chunk.update({
+      where: { id },
+      data: {
+        ...(data.content && { content: data.content }),
+        ...(data.tags && { tags: data.tags }),
+        ...(data.metadata && { metadata: data.metadata }),
+        ...(embeddingBuffer && { embedding: embeddingBuffer }),
+      },
+    });
+  } catch (error) {
+    console.error("Error updating chunk:", error);
+    throw new Error("Failed to update chunk");
   }
-  
-  return chunk;
 }
 
 export async function deleteChunk(id: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('chunks')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error(`Error deleting chunk ${id}:`, error);
+  try {
+    await prisma.chunk.delete({
+      where: { id }
+    });
+    return true;
+  } catch (error) {
+    console.error("Error deleting chunk:", error);
     return false;
   }
-  
-  return true;
-} 
+}

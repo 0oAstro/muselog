@@ -1,109 +1,150 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
+  // Enable the vector extension
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  name          String?
-  spaces        Space[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  spaces    Space[]
+  sources   Source[]
+  notes     Note[]
+  chunks    Chunk[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
 }
 
 model Space {
-  id           String   @id @default(cuid())
-  name         String
-  description  String?
-  icon         String?
-  backdrop     String?
-  tags         String[]
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sources      Source[]
-  notes        Note[]
-  chats        Chat[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String?
+  backdrop    String?
+  tags        String[] @default([])
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources     Source[]
+  notes       Note[]
+  chats       Chat[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], name: "spaces_user_id_idx")
+  @@map("spaces")
 }
 
 model Source {
-  id           String   @id @default(cuid())
-  name         String
-  type         String   // pdf, image, audio, youtube, text
-  url          String?
-  filepath     String?
-  tags         String[]
-  metadata     Json?
-  spaceId      String
-  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  chunks       Chunk[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  type        String // pdf, image, audio, youtube, text
+  url         String?
+  filepath    String?
+  tags        String[] @default([])
+  metadata    Json?
+  spaceId     String   @map("space_id")
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks      Chunk[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([spaceId], name: "sources_space_id_idx")
+  @@index([userId], name: "sources_user_id_idx")
+  @@map("sources")
 }
 
 model Chunk {
-  id           String   @id @default(cuid())
-  content      String   @db.Text
-  tags         String[]
-  metadata     Json?
-  embedding    Bytes?   // For hybrid search
-  vectorId     String?  // Reference to vector DB
-  sourceId     String
-  source       Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  citations    Citation[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         String     @id @default(uuid())
+  content    String     @db.Text
+  tags       String[]   @default([])
+  metadata   Json?
+  // Use Bytes for the embedding vector - compatible with pgvector
+  embedding  Bytes?
+  // Reference to external vector database if needed
+  vectorId   String?    @map("vector_id")
+  sourceId   String     @map("source_id")
+  source     Source     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  userId     String     @map("user_id")
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  citations  Citation[]
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  @@index([sourceId], name: "chunks_source_id_idx")
+  @@index([userId], name: "chunks_user_id_idx")
+  @@map("chunks")
 }
 
 model Note {
-  id           String   @id @default(cuid())
-  title        String
-  content      String   @db.Text
-  tags         String[]
-  spaceId      String
-  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @db.Text
+  tags      String[] @default([])
+  spaceId   String   @map("space_id")
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([spaceId], name: "notes_space_id_idx")
+  @@index([userId], name: "notes_user_id_idx")
+  @@map("notes")
 }
 
+// Additional models not in the schema.sql but needed for enhanced functionality
 model Chat {
-  id           String       @id @default(cuid())
-  title        String?
-  spaceId      String
-  space        Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  messages     ChatMessage[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id        String        @id @default(uuid())
+  title     String?
+  spaceId   String        @map("space_id")
+  space     Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@index([spaceId])
+  @@map("chats")
 }
 
 model ChatMessage {
-  id           String   @id @default(cuid())
-  role         String   // user or assistant
-  content      String   @db.Text
-  chatId       String
-  chat         Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  citations    Citation[]
-  createdAt    DateTime @default(now())
+  id        String     @id @default(uuid())
+  role      String // user or assistant
+  content   String     @db.Text
+  chatId    String     @map("chat_id")
+  chat      Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  citations Citation[]
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([chatId])
+  @@map("chat_messages")
 }
 
 model Citation {
-  id             String      @id @default(cuid())
-  relevanceScore Float?
-  chunkId        String
-  chunk          Chunk       @relation(fields: [chunkId], references: [id], onDelete: Cascade)
-  messageId      String?
-  message        ChatMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  createdAt      DateTime    @default(now())
+  id            String       @id @default(uuid())
+  relevanceScore Float?      @map("relevance_score")
+  chunkId       String       @map("chunk_id")
+  chunk         Chunk        @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  messageId     String?      @map("message_id")
+  message       ChatMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([chunkId])
+  @@index([messageId])
+  @@map("citations")
 }

@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import * as motion from "motion/react-client";import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   signInWithEmail,

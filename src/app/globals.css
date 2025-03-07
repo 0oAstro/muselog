@@ -116,6 +116,76 @@
   --sidebar-ring: oklch(0.446 0.03 256.802);
 }
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Gruvbox Light Theme */
+    --background: 50 30% 96%;
+    --foreground: 40 6% 19%;
+
+    --card: 50 30% 98%;
+    --card-foreground: 40 6% 19%;
+
+    --popover: 50 30% 98%;
+    --popover-foreground: 40 6% 19%;
+
+    --primary: 40 70% 40%;
+    --primary-foreground: 50 30% 98%;
+
+    --secondary: 20 25% 83%;
+    --secondary-foreground: 40 6% 19%;
+
+    --muted: 40 10% 89%;
+    --muted-foreground: 40 6% 40%;
+
+    --accent: 100 18% 78%;
+    --accent-foreground: 40 6% 19%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 50 30% 98%;
+
+    --border: 40 13% 76%;
+    --input: 40 13% 76%;
+    --ring: 40 6% 19%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Gruvbox Dark Theme */
+    --background: 40 6% 16%;
+    --foreground: 40 13% 86%;
+
+    --card: 40 6% 19%;
+    --card-foreground: 40 13% 86%;
+
+    --popover: 40 6% 19%;
+    --popover-foreground: 40 13% 86%;
+
+    --primary: 40 70% 50%;
+    --primary-foreground: 40 6% 19%;
+
+    --secondary: 40 6% 30%;
+    --secondary-foreground: 40 13% 86%;
+
+    --muted: 40 6% 25%;
+    --muted-foreground: 40 13% 65%;
+
+    --accent: 100 18% 40%;
+    --accent-foreground: 40 13% 86%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 40 13% 86%;
+
+    --border: 40 6% 30%;
+    --input: 40 6% 30%;
+    --ring: 40 70% 50%;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

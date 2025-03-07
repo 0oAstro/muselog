@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import * as motion from "motion/react-client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -38,22 +38,21 @@ export function AuthForm() {
 
   // Auto-login in development mode
   useEffect(() => {
-    const attemptDevLogin = async () => {
-      try {
-        const session = await autoDevLogin();
-        if (session) {
-          toast.success("Development mode", {
-            description: "You have been signed in with a test user account.",
+    if (process.env.NODE_ENV === 'development') {
+      const login = async () => {
+        try {
+          await loginWithTestUser();
+          toast.success("Auto-login", {
+            description: "Logged in as test user",
           });
-          router.push("/");
+          router.push("/spaces");
           router.refresh();
+        } catch (error) {
+          console.error("Auto-login failed:", error);
         }
-      } catch (error) {
-        // Silently fail and let the user log in manually
-      }
-    };
-
-    attemptDevLogin();
+      };
+      login();
+    }
   }, [router]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
@@ -123,27 +122,20 @@ export function AuthForm() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="mx-auto max-w-[450px] p-4 space-y-6"
-    >
-      <Card className="border-none shadow-lg dark:bg-zinc-900">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-2">
-            <Icons.logo className="h-10 w-10" />
-          </div>
-          <CardTitle className="text-2xl font-bold text-center">
-            Muselog
-          </CardTitle>
-          <CardDescription className="text-center">
-            Your personal knowledge database
-          </CardDescription>
+    <motion.div className="h-screen flex items-center justify-center p-4">
+      <Card className="w-full max-w-[360px] border-none shadow-lg dark:bg-zinc-900">
+        <CardHeader className="space-y-1 pb-2">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex items-center justify-center"
+          >
+            <Icons.logo className="h-7 w-7" />
+          </motion.div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pb-3">
           <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsList className="grid w-full grid-cols-2 mb-3">
               <TabsTrigger value="signin" onClick={() => setAuthMode("signin")}>
                 Sign In
               </TabsTrigger>
@@ -152,10 +144,10 @@ export function AuthForm() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="signin">
-              <form onSubmit={handleEmailAuth} className="space-y-4">
-                <div className="space-y-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="email">Email</Label>
+              <form onSubmit={handleEmailAuth} className="space-y-2">
+                <div className="space-y-1.5">
+                  <div className="grid gap-1">
+                    <Label htmlFor="email" className="text-sm">Email</Label>
                     <Input
                       id="email"
                       placeholder="email@example.com"
@@ -167,18 +159,11 @@ export function AuthForm() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
+                      className="h-8"
                     />
                   </div>
-                  <div className="grid gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="password">Password</Label>
-                      <a
-                        href="#"
-                        className="text-sm text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                      >
-                        Forgot password?
-                      </a>
-                    </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="password" className="text-sm">Password</Label>
                     <Input
                       id="password"
                       placeholder="••••••••"
@@ -188,17 +173,37 @@ export function AuthForm() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
+                      className="h-8"
                     />
                   </div>
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Sign In
-                </Button>
-              </form>
-            </TabsContent>
+                <motion.div
+                  initial={false}
+                  animate={isLoading ? { scale: 0.98 } : { scale: 1 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="w-full pt-1"
+                >
+                  <Button 
+                    type="submit" 
+                    className="w-full h-8" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex items-center text-sm"
+                      >
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Signing in...
+                      </motion.div>
+                    ) : (
+                      <span className="text-sm">Sign In</span>
+                    )}
+                  </Button>
+                </motion.div>
+            </form>
+          </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 <div className="space-y-2">
