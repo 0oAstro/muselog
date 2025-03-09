@@ -1,11 +1,12 @@
 "use client";
 
 import { ReactNode } from "react";
-import { useAuth } from "@/components/auth-provider";
-import { AuthForm } from "@/components/auth-form";
+import { AuthForm } from "@/components/auth";
 import { MainNav } from "@/components/main-nav";
 import { UserNav } from "@/components/user-nav";
 import { Skeleton } from "@/components/ui/skeleton";
+
+import { useAuth } from "@/components/providers/auth-provider";
 
 interface AppShellProps {
   children: ReactNode;

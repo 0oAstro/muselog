@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as motion from "motion/react-client";
 import { cn } from "@/lib/utils";
@@ -11,13 +11,11 @@ import {
   signInWithGoogle,
   signInWithGithub,
   loginWithTestUser,
-  autoDevLogin
-} from "@/lib/auth";
+} from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -27,7 +25,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { SiGithub, SiGoogle } from "@icons-pack/react-simple-icons";
 
 export function AuthForm() {
   const router = useRouter();
@@ -35,25 +32,6 @@ export function AuthForm() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-
-  // Auto-login in development mode
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      const login = async () => {
-        try {
-          await loginWithTestUser();
-          toast.success("Auto-login", {
-            description: "Logged in as test user",
-          });
-          router.push("/spaces");
-          router.refresh();
-        } catch (error) {
-          console.error("Auto-login failed:", error);
-        }
-      };
-      login();
-    }
-  }, [router]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,119 +100,110 @@ export function AuthForm() {
   };
 
   return (
-    <motion.div className="h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-[360px] border-none shadow-lg dark:bg-zinc-900">
-        <CardHeader className="space-y-1 pb-2">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center justify-center"
-          >
-            <Icons.logo className="h-7 w-7" />
-          </motion.div>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="mx-auto max-w-[450px] p-4 space-y-6"
+    >
+      <Card className="border-none shadow-lg">
+        <CardHeader className="space-y-1">
+          <div className="flex items-center justify-center mb-2">
+            <Icons.logo className="h-10 w-10" />
+          </div>
+          <CardTitle className="text-2xl font-bold text-center">
+            Muselog
+          </CardTitle>
+          <CardDescription className="text-center">
+            Your personal knowledge database
+          </CardDescription>
         </CardHeader>
-        <CardContent className="pb-3">
+        <CardContent>
           <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-3">
-              <TabsTrigger value="signin" onClick={() => setAuthMode("signin")}>
-                Sign In
-              </TabsTrigger>
-              <TabsTrigger value="signup" onClick={() => setAuthMode("signup")}>
-                Sign Up
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              {[
+                { value: "signin", label: "Sign In" },
+                { value: "signup", label: "Sign Up" },
+              ].map((tab, i) => (
+                <TabsTrigger
+                  key={i}
+                  value={tab.value}
+                  onClick={() => setAuthMode(tab.value as "signin" | "signup")}
+                  style={{ position: "relative" }}
+                  className="data-[state=active]:bg-transparent"
+                >
+                  <span style={{ position: "relative", zIndex: 1 }}>
+                    {tab.label}
+                  </span>
+                  {tab.value === authMode && (
+                    <motion.div
+                      layoutId="tab-background"
+                      className="absolute inset-0 bg-primary/10 rounded-md -z-0"
+                      transition={{ duration: 0.2 }}
+                    />
+                  )}
+                </TabsTrigger>
+              ))}
             </TabsList>
             <TabsContent value="signin">
-              <form onSubmit={handleEmailAuth} className="space-y-2">
-                <div className="space-y-1.5">
-                  <div className="grid gap-1">
-                    <Label htmlFor="email" className="text-sm">Email</Label>
-                    <Input
-                      id="email"
-                      placeholder="email@example.com"
-                      type="email"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      autoCorrect="off"
-                      disabled={isLoading}
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className="h-8"
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="password" className="text-sm">Password</Label>
-                    <Input
-                      id="password"
-                      placeholder="••••••••"
-                      type="password"
-                      autoComplete="current-password"
-                      disabled={isLoading}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="h-8"
-                    />
-                  </div>
-                </div>
-                <motion.div
-                  initial={false}
-                  animate={isLoading ? { scale: 0.98 } : { scale: 1 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="w-full pt-1"
-                >
-                  <Button 
-                    type="submit" 
-                    className="w-full h-8" 
+              <form onSubmit={handleEmailAuth} className="space-y-4">
+                <div className="space-y-2">
+                  <Input
+                    id="email"
+                    placeholder="Email"
+                    type="email"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    autoCorrect="off"
                     disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="flex items-center text-sm"
-                      >
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Signing in...
-                      </motion.div>
-                    ) : (
-                      <span className="text-sm">Sign In</span>
-                    )}
-                  </Button>
-                </motion.div>
-            </form>
-          </TabsContent>
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                  <Input
+                    id="password"
+                    placeholder="Password"
+                    type="password"
+                    autoComplete="current-password"
+                    disabled={isLoading}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Sign In
+                </Button>
+              </form>
+            </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 <div className="space-y-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="email-signup">Email</Label>
-                    <Input
-                      id="email-signup"
-                      placeholder="email@example.com"
-                      type="email"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      autoCorrect="off"
-                      disabled={isLoading}
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="password-signup">Password</Label>
-                    <Input
-                      id="password-signup"
-                      placeholder="••••••••"
-                      type="password"
-                      autoComplete="new-password"
-                      disabled={isLoading}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
+                  <Input
+                    id="email"
+                    placeholder="Email"
+                    type="email"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    autoCorrect="off"
+                    disabled={isLoading}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                  <Input
+                    id="password"
+                    placeholder="Password"
+                    type="password"
+                    autoComplete="new-password"
+                    disabled={isLoading}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading && (
@@ -248,65 +217,45 @@ export function AuthForm() {
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
+              <span className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
+              <span className="px-2 bg-card text-muted-foreground font-medium">
                 Or continue with
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <Button
               variant="outline"
-              className="w-full"
               onClick={() => handleOAuthSignIn("github")}
               disabled={isLoading}
+              className="h-11"
             >
-              <SiGithub className="mr-2 h-4 w-4" />
+              <Icons.github className="mr-2 h-4 w-4" />
               GitHub
             </Button>
             <Button
               variant="outline"
-              className="w-full"
               onClick={() => handleOAuthSignIn("google")}
               disabled={isLoading}
+              className="h-11"
             >
-              <SiGoogle className="mr-2 h-4 w-4" />
+              <Icons.google className="mr-2 h-4 w-4" />
               Google
             </Button>
           </div>
-
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-4">
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                disabled={isLoading}
-                onClick={handleTestUserLogin}
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Icons.user className="mr-2 h-4 w-4" />
-                )}
-                Test Account
-              </Button>
-            </div>
-          )}
         </CardContent>
-        <CardFooter className="text-center text-sm text-muted-foreground">
-          By continuing, you agree to our{" "}
-          <a href="#" className="underline underline-offset-4 hover:text-primary">
-            Terms of Service
-          </a>{" "}
-          and{" "}
-          <a href="#" className="underline underline-offset-4 hover:text-primary">
-            Privacy Policy
-          </a>
-          .
+        <CardFooter>
+          <Button
+            variant="link"
+            onClick={handleTestUserLogin}
+            disabled={isLoading}
+            className="w-full text-sm text-muted-foreground hover:text-primary"
+          >
+            Continue as Test User
+          </Button>
         </CardFooter>
       </Card>
     </motion.div>

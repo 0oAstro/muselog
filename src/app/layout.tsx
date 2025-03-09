@@ -5,12 +5,14 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "sonner";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Muselog",
-  description: "Your personal knowledge database",
+  description: "A platform for music enthusiasts",
 };
 
 export default function RootLayout({
@@ -19,8 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className={`min-h-screen font-sans antialiased ${inter.className}`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

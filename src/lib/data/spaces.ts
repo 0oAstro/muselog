@@ -1,10 +1,12 @@
+"use server";
+
 import prisma from "@/lib/db";
 import { generateEmbedding, embeddingToBuffer } from "@/lib/embeddings";
 import type { Space, Source, Note, Chunk } from "@/lib/types";
 
 // UUID validation function
 function isValidUUID(uuid: string): boolean {
-  if (uuid === 'new') return false;
+  if (uuid === "new") return false;
   const uuidRegex =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
@@ -14,7 +16,7 @@ function isValidUUID(uuid: string): boolean {
 export async function getAllSpaces(): Promise<Space[]> {
   try {
     return await prisma.space.findMany({
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: "desc" },
     });
   } catch (error) {
     console.error("Error fetching spaces:", error);
@@ -25,23 +27,36 @@ export async function getAllSpaces(): Promise<Space[]> {
 export async function getSpaceById(id: string): Promise<Space | null> {
   try {
     // Handle the 'new' route separately
-    if (id === 'new') {
+    if (id === "new") {
       return null;
     }
-    
+
     // Validate UUID format before querying database
     if (!isValidUUID(id)) {
       throw new Error(`Invalid UUID format: ${id}`);
     }
 
+    console.log("Fetching space:", id);
+
     return await prisma.space.findUnique({
       where: { id },
       include: {
         sources: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            url: true,
+            tags: true,
+            createdAt: true,
+            updatedAt: true,
+            spaceId: true,
+            userId: true,
+          },
         },
         notes: {
-          orderBy: { updatedAt: 'desc' },
+          orderBy: { updatedAt: "desc" },
         },
       },
     });
@@ -55,7 +70,7 @@ export async function getSpacesByUserId(userId: string): Promise<Space[]> {
   try {
     return await prisma.space.findMany({
       where: { userId },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { updatedAt: "desc" },
     });
   } catch (error) {
     console.error("Error fetching spaces:", error);
@@ -63,13 +78,15 @@ export async function getSpacesByUserId(userId: string): Promise<Space[]> {
   }
 }
 
-export async function createSpace(data: Omit<Space, "id" | "createdAt" | "updatedAt">): Promise<Space> {
+export async function createSpace(
+  data: Omit<Space, "id" | "createdAt" | "updatedAt">
+): Promise<Space> {
   try {
     return await prisma.space.create({
       data: {
         ...data,
         tags: data.tags || [],
-      }
+      },
     });
   } catch (error) {
     console.error("Error creating space:", error);
@@ -84,7 +101,7 @@ export async function updateSpace(
   try {
     return await prisma.space.update({
       where: { id },
-      data
+      data,
     });
   } catch (error) {
     console.error("Error updating space:", error);
@@ -95,7 +112,7 @@ export async function updateSpace(
 export async function deleteSpace(id: string): Promise<boolean> {
   try {
     await prisma.space.delete({
-      where: { id }
+      where: { id },
     });
     return true;
   } catch (error) {
@@ -104,12 +121,39 @@ export async function deleteSpace(id: string): Promise<boolean> {
   }
 }
 
+// Delete multiple spaces
+export async function deleteSpaces(ids: string[]): Promise<{
+  success: string[];
+  failed: string[];
+}> {
+  const results = {
+    success: [] as string[],
+    failed: [] as string[],
+  };
+
+  for (const id of ids) {
+    try {
+      const deleted = await deleteSpace(id);
+      if (deleted) {
+        results.success.push(id);
+      } else {
+        results.failed.push(id);
+      }
+    } catch (error) {
+      console.error(`Error deleting space ${id}:`, error);
+      results.failed.push(id);
+    }
+  }
+
+  return results;
+}
+
 // Notes CRUD operations
 export async function getNotesBySpaceId(spaceId: string): Promise<Note[]> {
   try {
     return await prisma.note.findMany({
       where: { spaceId },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { updatedAt: "desc" },
     });
   } catch (error) {
     console.error("Error fetching notes:", error);
@@ -128,13 +172,15 @@ export async function getNoteById(id: string): Promise<Note | null> {
   }
 }
 
-export async function createNote(data: Omit<Note, "id" | "createdAt" | "updatedAt">): Promise<Note> {
+export async function createNote(
+  data: Omit<Note, "id" | "createdAt" | "updatedAt">
+): Promise<Note> {
   try {
     return await prisma.note.create({
       data: {
         ...data,
         tags: data.tags || [],
-      }
+      },
     });
   } catch (error) {
     console.error("Error creating note:", error);
@@ -149,7 +195,7 @@ export async function updateNote(
   try {
     return await prisma.note.update({
       where: { id },
-      data
+      data,
     });
   } catch (error) {
     console.error("Error updating note:", error);
@@ -160,7 +206,7 @@ export async function updateNote(
 export async function deleteNote(id: string): Promise<boolean> {
   try {
     await prisma.note.delete({
-      where: { id }
+      where: { id },
     });
     return true;
   } catch (error) {
@@ -174,7 +220,7 @@ export async function getSourcesBySpaceId(spaceId: string): Promise<Source[]> {
   try {
     return await prisma.source.findMany({
       where: { spaceId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
   } catch (error) {
     console.error("Error fetching sources:", error);
@@ -193,13 +239,15 @@ export async function getSourceById(id: string): Promise<Source | null> {
   }
 }
 
-export async function createSource(data: Omit<Source, "id" | "createdAt" | "updatedAt">): Promise<Source> {
+export async function createSource(
+  data: Omit<Source, "id" | "createdAt" | "updatedAt">
+): Promise<Source> {
   try {
     return await prisma.source.create({
       data: {
         ...data,
         tags: data.tags || [],
-      }
+      },
     });
   } catch (error) {
     console.error("Error creating source:", error);
@@ -214,7 +262,7 @@ export async function updateSource(
   try {
     return await prisma.source.update({
       where: { id },
-      data
+      data,
     });
   } catch (error) {
     console.error("Error updating source:", error);
@@ -225,7 +273,7 @@ export async function updateSource(
 export async function deleteSource(id: string): Promise<boolean> {
   try {
     await prisma.source.delete({
-      where: { id }
+      where: { id },
     });
     return true;
   } catch (error) {
@@ -239,7 +287,7 @@ export async function getChunksBySourceId(sourceId: string): Promise<Chunk[]> {
   try {
     return await prisma.chunk.findMany({
       where: { sourceId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
     });
   } catch (error) {
     console.error("Error fetching chunks:", error);
@@ -258,12 +306,14 @@ export async function getChunkById(id: string): Promise<Chunk | null> {
   }
 }
 
-export async function createChunk(data: Omit<Chunk, "id" | "createdAt" | "updatedAt">): Promise<Chunk> {
+export async function createChunk(
+  data: Omit<Chunk, "id" | "createdAt" | "updatedAt">
+): Promise<Chunk> {
   try {
     // Generate embedding for the chunk content
     const embeddingArray = await generateEmbedding(data.content);
     const embeddingBuffer = embeddingToBuffer(embeddingArray);
-    
+
     // Create the chunk with embedding in the database
     return await prisma.chunk.create({
       data: {
@@ -292,7 +342,7 @@ export async function updateChunk(
       const embeddingArray = await generateEmbedding(data.content);
       embeddingBuffer = embeddingToBuffer(embeddingArray);
     }
-    
+
     // Update the chunk with new data and possibly new embedding
     return await prisma.chunk.update({
       where: { id },
@@ -312,11 +362,17 @@ export async function updateChunk(
 export async function deleteChunk(id: string): Promise<boolean> {
   try {
     await prisma.chunk.delete({
-      where: { id }
+      where: { id },
     });
     return true;
   } catch (error) {
     console.error("Error deleting chunk:", error);
     return false;
   }
+}
+
+// Fix the missing getCurrentUser function that was causing an error
+async function getCurrentUser() {
+  // Implement your user authentication logic here
+  throw new Error("getCurrentUser function not implemented");
 }

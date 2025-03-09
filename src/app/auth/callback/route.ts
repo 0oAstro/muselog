@@ -1,21 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get('code');
-  const next = searchParams.get('next') || '/';
-  
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get("code");
+
   if (code) {
-    // Exchange the code for a session
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    
-    if (error) {
-      console.error('Error exchanging code for session:', error);
-      return NextResponse.redirect(new URL('/auth/error', request.url));
-    }
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    await supabase.auth.exchangeCodeForSession(code);
+
+    // After successful authentication, redirect to spaces
+    return NextResponse.redirect(new URL("/spaces", request.url));
   }
 
-  // Redirect to the home page or the next parameter
-  return NextResponse.redirect(new URL(next, request.url));
-} 
+  // If no code is present, redirect to home page
+  return NextResponse.redirect(new URL("/", request.url));
+}

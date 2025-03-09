@@ -4,11 +4,11 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { User } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { 
-  supabase, 
-  getCurrentUser, 
-  autoDevLogin, 
-  isDevelopment 
+import {
+  supabase,
+  getCurrentUser,
+  autoDevLogin,
+  isDevelopment,
 } from "@/lib/auth";
 
 type AuthContextType = {
@@ -42,7 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (session?.user) {
               setUser(session.user);
               toast.success("Development mode", {
-                description: "You have been signed in with a test user account.",
+                description:
+                  "You have been signed in with a test user account.",
               });
             }
           } catch (error) {

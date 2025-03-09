@@ -1,29 +1,104 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { LexicalComposer } from "@lexical/react/LexicalComposer";
-import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import { ContentEditable } from "@lexical/react/LexicalContentEditable";
-import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
-import { AutoFocusPlugin } from "@lexical/react/LexicalAutoFocusPlugin";
-import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
-import { ListPlugin } from "@lexical/react/LexicalListPlugin";
-import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
-import { TRANSFORMERS } from "@lexical/markdown";
-import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
-import { EditorRefPlugin } from "./plugins/editor-ref-plugin";
-import { ToolbarPlugin } from "./plugins/toolbar-plugin";
-import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import { SerializedEditorState } from "lexical";
+import { useEffect, useMemo, useRef, useState } from "react";
+import YooptaEditor, {
+  createYooptaEditor,
+  Elements,
+  Blocks,
+  useYooptaEditor,
+  YooptaContentValue,
+  YooptaOnChangeOptions,
+} from "@yoopta/editor";
+import ActionMenuList, {
+  DefaultActionMenuRender,
+} from "@yoopta/action-menu-list";
+import Toolbar, { DefaultToolbarRender } from "@yoopta/toolbar";
+import LinkTool, { DefaultLinkToolRender } from "@yoopta/link-tool";
+import { NotionActionMenuRender } from "./NotionActionMenuRender";
 import { cn } from "@/lib/utils";
+// Import the initial value
+import { WITH_BASIC_INIT_VALUE } from "./initValue";
+
+// Import all plugins
+import Paragraph from "@yoopta/paragraph";
+import Blockquote from "@yoopta/blockquote";
+import Embed from "@yoopta/embed";
+import Image from "@yoopta/image";
+import Link from "@yoopta/link";
+import Callout from "@yoopta/callout";
+import Video from "@yoopta/video";
+import File from "@yoopta/file";
+import Accordion from "@yoopta/accordion";
+import { NumberedList, BulletedList, TodoList } from "@yoopta/lists";
+import {
+  Bold,
+  Italic,
+  CodeMark,
+  Underline,
+  Strike,
+  Highlight,
+} from "@yoopta/marks";
+import { HeadingOne, HeadingTwo, HeadingThree } from "@yoopta/headings";
+import Code from "@yoopta/code";
+import Table from "@yoopta/table";
+import Divider from "@yoopta/divider";
 
 export type EditorProps = {
-  editorState?: SerializedEditorState;
-  onChange?: (editorState: SerializedEditorState) => void;
+  editorState?: YooptaContentValue;
+  onChange?: (
+    editorState: YooptaContentValue,
+    options?: YooptaOnChangeOptions
+  ) => void;
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
   editable?: boolean;
+};
+
+// Define plugins
+const PLUGINS = [
+  Paragraph,
+  Table,
+  Divider,
+  Accordion,
+  HeadingOne,
+  HeadingTwo,
+  HeadingThree,
+  Blockquote,
+  Callout,
+  NumberedList,
+  BulletedList,
+  TodoList,
+  Code,
+  Link,
+  Embed,
+  Image,
+  Video,
+  File,
+];
+
+// Define marks
+const MARKS = [Bold, Italic, CodeMark, Underline, Strike, Highlight];
+
+// Define tools
+const TOOLS = {
+  ActionMenu: {
+    render: NotionActionMenuRender,
+    tool: ActionMenuList,
+  },
+  Toolbar: {
+    render: DefaultToolbarRender,
+    tool: Toolbar,
+  },
+  LinkTool: {
+    render: DefaultLinkToolRender,
+    tool: LinkTool,
+  },
+};
+
+const EDITOR_STYLE = {
+  minHeight: "200px",
+  padding: "1rem",
 };
 
 export function Editor({
@@ -34,90 +109,51 @@ export function Editor({
   className,
   editable = true,
 }: EditorProps) {
-  const [floatingAnchorElem, setFloatingAnchorElem] =
-    useState<HTMLDivElement | null>(null);
-  const [isSmallWidthViewport, setIsSmallWidthViewport] =
-    useState<boolean>(false);
+  const editor = useMemo(() => createYooptaEditor(), []);
+  const selectionRef = useRef(null);
 
-  useEffect(() => {
-    const updateViewPortWidth = () => {
-      const isSmallWidth = window.matchMedia("(max-width: 640px)").matches;
-      setIsSmallWidthViewport(isSmallWidth);
-    };
+  // Initialize with base init value if no editor state is provided
+  const initialValue = useMemo(() => {
+    return editorState && Object.keys(editorState).length > 0
+      ? editorState
+      : WITH_BASIC_INIT_VALUE;
+  }, [editorState]);
 
-    updateViewPortWidth();
-    window.addEventListener("resize", updateViewPortWidth);
+  const [value, setValue] = useState<YooptaContentValue>(initialValue);
 
-    return () => {
-      window.removeEventListener("resize", updateViewPortWidth);
-    };
-  }, []);
-
-  const initialConfig = {
-    namespace: "muselog-editor",
-    onError: (error: Error) => {
-      console.error(error);
-    },
-    editable,
-    editorState: editorState ? JSON.stringify(editorState) : undefined,
-    theme: {
-      paragraph: "mb-2 last:mb-0",
-      heading: {
-        h1: "text-3xl font-bold mb-3",
-        h2: "text-2xl font-bold mb-3",
-        h3: "text-xl font-bold mb-3",
-        h4: "text-lg font-bold mb-3",
-        h5: "text-base font-bold mb-3",
-        h6: "text-sm font-bold mb-3",
-      },
-      list: {
-        ul: "list-disc ml-6 mb-2",
-        ol: "list-decimal ml-6 mb-2",
-        listitem: "mb-1",
-        nested: {
-          listitem: "mb-1",
-        },
-      },
-      link: "text-primary underline",
-      text: {
-        bold: "font-bold",
-        italic: "italic",
-        underline: "underline",
-        strikethrough: "line-through",
-        code: "bg-muted p-1 rounded font-mono text-sm",
-      },
-      quote: "border-l-4 border-muted pl-4 italic my-4",
-    },
+  // Handle changes
+  const handleChange = (
+    newValue: YooptaContentValue,
+    options: YooptaOnChangeOptions
+  ) => {
+    setValue(newValue);
+    onChange?.(newValue, options);
   };
 
+  // Set initial editor state if provided
+  useEffect(() => {
+    if (editorState && Object.keys(editorState).length > 0) {
+      editor.withoutSavingHistory(() => {
+        editor.setEditorValue(editorState);
+      });
+    }
+  }, [editor, editorState]);
+
   return (
-    <LexicalComposer initialConfig={initialConfig}>
-      <div className={cn("border rounded-md", className)}>
-        <ToolbarPlugin />
-        <div className="relative">
-          <RichTextPlugin
-            contentEditable={
-              <ContentEditable
-                className="min-h-[200px] outline-none p-4 prose prose-sm dark:prose-invert max-w-none"
-                spellCheck={true}
-              />
-            }
-            placeholder={
-              <div className="absolute top-[1.125rem] left-[1.125rem] text-muted-foreground select-none pointer-events-none">
-                {placeholder}
-              </div>
-            }
-            ErrorBoundary={LexicalErrorBoundary}
-          />
-          <HistoryPlugin />
-          {autoFocus && <AutoFocusPlugin />}
-          <LinkPlugin />
-          <ListPlugin />
-          <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-          {onChange && <OnChangePlugin onChange={onChange} />}
-          <EditorRefPlugin />
-        </div>
-      </div>
-    </LexicalComposer>
+    <div className={cn("border rounded-md", className)} ref={selectionRef}>
+      <YooptaEditor
+        editor={editor}
+        plugins={PLUGINS}
+        marks={MARKS}
+        tools={TOOLS}
+        autoFocus={autoFocus}
+        readOnly={!editable}
+        placeholder={placeholder}
+        style={EDITOR_STYLE}
+        value={value}
+        onChange={handleChange}
+        selectionBoxRoot={selectionRef}
+      />
+    </div>
   );
 }

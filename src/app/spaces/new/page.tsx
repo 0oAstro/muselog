@@ -24,6 +24,7 @@ import { createSpace } from "@/lib/data/spaces";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
 import type { Space } from "@/lib/types";
+import { EmojiPicker } from "@/components/emoji-picker";
 
 // Form validation schema
 const formSchema = z.object({
@@ -86,8 +87,13 @@ export default function NewSpacePage() {
       });
 
       toast.success("Space created successfully!");
-      router.push(`/spaces/${newSpace.id}`);
+
+      // First refresh data in the background
       router.refresh();
+
+      // Then redirect to the new space
+      // Using replace instead of push for a cleaner navigation history
+      router.replace(`/spaces/${newSpace.id}`);
     } catch (error: any) {
       toast.error("Failed to create space", {
         description: error.message || "Please try again later",
@@ -117,10 +123,10 @@ export default function NewSpacePage() {
           <h1 className="text-2xl font-bold">Create New Space</h1>
         </div>
 
-        <Card className="border">
+        <Card className="border shadow-sm">
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center">
                 <Sparkles className="h-4 w-4 text-primary" />
               </div>
               <CardTitle>Space Details</CardTitle>
@@ -138,25 +144,46 @@ export default function NewSpacePage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Icon</FormLabel>
-                      <div className="grid grid-cols-5 gap-2">
-                        {EMOJI_SUGGESTIONS.map((emoji) => (
-                          <Button
-                            key={emoji}
-                            type="button"
-                            variant="outline"
-                            className={cn(
-                              "h-12 text-xl",
-                              field.value === emoji &&
-                                "border-primary bg-primary/10"
-                            )}
-                            onClick={() => {
-                              field.onChange(emoji);
-                              setSelectedEmoji(emoji);
-                            }}
-                          >
-                            {emoji}
-                          </Button>
-                        ))}
+                      <div className="space-y-3">
+                        {/* Add emoji picker */}
+                        <div className="flex items-center gap-2">
+                          <EmojiPicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            buttonVariant="ghost"
+                          />
+                          <p className="text-sm text-muted-foreground">
+                            Click to select any emoji
+                          </p>
+                        </div>
+
+                        {/* Quick suggestions */}
+                        <div>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            Quick suggestions:
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {EMOJI_SUGGESTIONS.map((emoji) => (
+                              <Button
+                                key={emoji}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className={cn(
+                                  "text-lg border-muted-foreground/20",
+                                  field.value === emoji &&
+                                    "border-primary bg-primary/15"
+                                )}
+                                onClick={() => {
+                                  field.onChange(emoji);
+                                  setSelectedEmoji(emoji);
+                                }}
+                              >
+                                {emoji}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                       <FormMessage />
                     </FormItem>
@@ -195,7 +222,7 @@ export default function NewSpacePage() {
                   )}
                 />
 
-                <div className="pt-4 border-t">
+                <div className="pt-4 border-t border-border">
                   <Button
                     type="submit"
                     className="w-full"

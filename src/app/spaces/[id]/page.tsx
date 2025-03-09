@@ -15,7 +15,7 @@ import {
   Search,
 } from "lucide-react";
 import { SourceCreator } from "@/components/source-creator";
-import { SourceManagement } from "@/components/source-management";
+import { SourceManagementWrapper } from "@/components/source-management-wrapper";
 import { Editor } from "@/components/editor";
 import { Input } from "@/components/ui/input";
 import LoadingSpinner from "@/components/ui/loading-spinner";
@@ -46,42 +46,6 @@ const ChatLoading = () => (
   </div>
 );
 
-// Mock data for sources until API is connected
-const mockSources = [
-  {
-    id: "source-1",
-    title: "Introduction to Machine Learning",
-    type: "file" as const,
-    tags: ["ML", "AI", "Introduction"],
-    createdAt: new Date("2023-05-15"),
-    updatedAt: new Date("2023-05-15"),
-  },
-  {
-    id: "source-2",
-    title: "Neural Networks Explained",
-    type: "youtube" as const,
-    tags: ["Neural Networks", "Deep Learning"],
-    createdAt: new Date("2023-06-10"),
-    updatedAt: new Date("2023-06-12"),
-  },
-  {
-    id: "source-3",
-    title: "Research Paper on Transformers",
-    type: "link" as const,
-    tags: ["Research", "Transformers", "NLP"],
-    createdAt: new Date("2023-07-05"),
-    updatedAt: new Date("2023-07-05"),
-  },
-  {
-    id: "source-4",
-    title: "My thoughts on GPT-4",
-    type: "note" as const,
-    tags: ["GPT", "AI", "Personal"],
-    createdAt: new Date("2023-08-20"),
-    updatedAt: new Date("2023-08-22"),
-  },
-];
-
 export default async function SpacePage({ params }: PageProps) {
   // Handle both synchronous and asynchronous params
   const id = params instanceof Promise ? (await params).id : params.id;
@@ -100,7 +64,7 @@ export default async function SpacePage({ params }: PageProps) {
         animate={{ opacity: 1 }}
         className="min-h-screen flex flex-col"
       >
-        <header className="border-b px-6 py-4 flex items-center justify-between bg-background sticky top-0 z-50">
+        <header className="border-b px-6 py-4 flex items-center justify-between bg-background sticky top-0 z-50 shadow-sm">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" asChild>
               <Link href="/spaces">
@@ -135,7 +99,7 @@ export default async function SpacePage({ params }: PageProps) {
         <div className="flex-1 container mx-auto py-6 px-4">
           <Tabs defaultValue="sources" className="w-full">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-              <TabsList>
+              <TabsList className="bg-muted/30">
                 <TabsTrigger
                   value="sources"
                   className="flex items-center gap-2"
@@ -195,7 +159,7 @@ export default async function SpacePage({ params }: PageProps) {
                           <Badge
                             key={tag}
                             variant="secondary"
-                            className="cursor-pointer hover:bg-secondary/80"
+                            className="cursor-pointer hover:bg-secondary/80 text-secondary-foreground"
                           >
                             {tag}
                           </Badge>
@@ -216,12 +180,7 @@ export default async function SpacePage({ params }: PageProps) {
                     </CardHeader>
                     <CardContent>
                       <Suspense fallback={<SourcesLoading />}>
-                        <SourceManagement
-                          sources={mockSources}
-                          onSourcesSelect={(selectedSources) => {
-                            console.log("Selected sources:", selectedSources);
-                          }}
-                        />
+                        <SourceManagementWrapper sources={space.sources} />
                       </Suspense>
                     </CardContent>
                   </Card>
@@ -257,7 +216,7 @@ export default async function SpacePage({ params }: PageProps) {
                 <CardContent className="h-[calc(100%-5rem)] flex items-center justify-center">
                   <Suspense fallback={<ChatLoading />}>
                     <div className="text-center">
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                      <div className="w-12 h-12 rounded-full bg-primary/15 flex items-center justify-center mx-auto mb-4">
                         <MessageSquare className="h-6 w-6 text-primary" />
                       </div>
                       <h3 className="text-lg font-medium mb-2">
